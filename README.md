@@ -1,6 +1,6 @@
-# ROSA HCP End-to-End Test Suite
+# ROSA HCP Feature Test Automation
 
-End-to-end testing framework for **ROSA HCP** (Red Hat OpenShift Service on AWS - Hosted Control Plane) clusters using **Cluster API Provider AWS (CAPA)**.
+Feature testing framework for **ROSA HCP** (Red Hat OpenShift Service on AWS - Hosted Control Plane) clusters using **Cluster API Provider AWS (CAPA)**.
 
 ## Overview
 
@@ -232,76 +232,6 @@ Configure the following credentials in Jenkins:
 - `AWS_CREDENTIALS` - AWS access key ID and secret access key (username/password)
 
 ## Troubleshooting
-
-### Common Issues
-
-#### Stuck ROSANetwork Deletion
-
-**Symptom**: ROSANetwork resource remains in "Deleting" state after timeout
-
-**Root Cause**: CloudFormation stack deletion fails due to orphaned security groups with dependencies
-
-**Solution**: The framework automatically handles this:
-1. Waits for ROSANetwork deletion (default: 30 minutes)
-2. If deletion times out, checks for finalizers
-3. Removes finalizers to force Kubernetes resource deletion
-4. Displays warning about potential orphaned AWS resources
-
-**Manual Cleanup** (if needed):
-```bash
-# Check CloudFormation stack status
-aws cloudformation describe-stacks --region us-west-2 --stack-name <cluster-name>-rosa-network-stack
-
-# Delete orphaned security groups
-aws ec2 describe-security-groups --region us-west-2 --filters "Name=vpc-id,Values=<vpc-id>"
-aws ec2 delete-security-group --region us-west-2 --group-id <sg-id>
-```
-
-#### OCM Authentication Failures
-
-**Solution**:
-```bash
-# Verify OCM credentials
-rosa whoami
-
-# Check if token is expired
-rosa login --token=<new-token>
-
-# Verify client ID and secret are correct
-echo $OCM_CLIENT_ID
-echo $OCM_CLIENT_SECRET
-```
-
-#### AWS Permission Errors
-
-**Solution**:
-```bash
-# Verify ROSA permissions
-rosa verify permissions
-
-# Check AWS credentials
-aws sts get-caller-identity
-
-# Ensure account limits allow cluster creation
-rosa verify quota
-```
-
-#### CAPI/CAPA Not Enabled
-
-**Solution**:
-```bash
-# Run configure-mce-environment test suite
-./run-test-suite.py 10-configure-mce-environment
-
-# Verify MCE namespace and deployments
-oc get deploy -n ${MCE_NAMESPACE}
-
-# Check CAPA controller status
-oc get deploy -n capa-system
-
-# View CAPA controller logs
-oc logs -n capa-system deploy/capa-controller-manager -f
-```
 
 ### Debug Mode
 
