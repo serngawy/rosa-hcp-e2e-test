@@ -1,28 +1,6 @@
 {
   "version": "1.0.0",
   "description": "Fix strategies for known ROSA HCP test automation issues",
-  "rosanetwork_stuck_deletion": {
-    "name": "Remove Finalizers from Stuck ROSANetwork",
-    "strategy": "remove_finalizers",
-    "automated": true,
-    "steps": [
-      "Verify resource has deletionTimestamp",
-      "Check for finalizers on the resource",
-      "Patch resource to remove finalizers",
-      "Verify resource deletion completes"
-    ],
-    "commands": [
-      "oc get rosanetwork {name} -n {namespace} -o json | jq '.metadata.finalizers'",
-      "oc patch rosanetwork {name} -n {namespace} --type=merge -p '{\"metadata\":{\"finalizers\":null}}'"
-    ],
-    "prerequisites": [
-      "oc/kubectl CLI access",
-      "Permissions to patch resources in namespace"
-    ],
-    "success_criteria": "Resource no longer appears in 'oc get rosanetwork'",
-    "rollback": "None needed - finalizer removal is safe",
-    "notes": "This fix is safe when CloudFormation stack deletion has already failed or timed out. AWS resources may need manual cleanup."
-  },
   "cloudformation_deletion_failure": {
     "name": "CloudFormation Stack Manual Cleanup",
     "strategy": "manual_cloudformation_cleanup",

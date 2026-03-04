@@ -3,23 +3,6 @@
   "description": "Known issues and error patterns for ROSA HCP test automation",
   "patterns": [
     {
-      "type": "rosanetwork_stuck_deletion",
-      "pattern": ".*rosanetwork.*delete.*timeout.*",
-      "severity": "high",
-      "auto_fix": true,
-      "description": "ROSANetwork resource stuck in deletion state with finalizers",
-      "symptoms": [
-        "Resource has deletionTimestamp but still exists",
-        "Finalizers preventing deletion",
-        "CloudFormation stack deletion blocked"
-      ],
-      "common_causes": [
-        "Orphaned security groups",
-        "VPC dependencies",
-        "CloudFormation stack in DELETE_FAILED state"
-      ]
-    },
-    {
       "type": "cloudformation_deletion_failure",
       "pattern": ".*cloudformation.*(delete.*fail|rollback).*",
       "severity": "high",
