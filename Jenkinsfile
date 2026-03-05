@@ -132,7 +132,8 @@ pipeline {
                                 cd rosa-hcp-e2e-test
                                 # Execute the CAPI/CAPA configuration test suite (RHACM4K-61722) with maximum verbosity
                                 # Pass all credentials and cluster info as Ansible extra vars (UPPERCASE names match playbook expectations)
-                                ./run-test-suite.py 10-configure-mce-environment --format junit -vvv \
+                                # AI agents enabled for autonomous issue detection and remediation
+                                ./run-test-suite.py 10-configure-mce-environment --format junit -vvv --ai-agent \
                                   -e OCP_HUB_API_URL="${OCP_HUB_API_URL}" \
                                   -e OCP_HUB_CLUSTER_USER="${OCP_HUB_CLUSTER_USER}" \
                                   -e OCP_HUB_CLUSTER_PASSWORD="${OCP_HUB_CLUSTER_PASSWORD}" \
@@ -144,8 +145,8 @@ pipeline {
                                   -e OCM_CLIENT_SECRET="${OCM_CLIENT_SECRET}"
                             '''
                         }
-                        // Archive results from both old and new test systems
-                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.xml', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
+                        // Archive results from both old and new test systems, including AI agent logs
+                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.xml, rosa-hcp-e2e-test/agents/knowledge_base/intervention_log.json', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
                     }
                     catch (ex) {
                         echo 'CAPI Configuration Tests failed ... Marking build as FAILURE'
@@ -179,7 +180,8 @@ pipeline {
                                 cd rosa-hcp-e2e-test
                                 # Execute the ROSA HCP provisioning test suite with maximum verbosity
                                 # Pass Jenkins parameters and credentials as Ansible extra vars
-                                ./run-test-suite.py 20-rosa-hcp-provision --format junit -vvv \
+                                # AI agents enabled for autonomous issue detection and remediation
+                                ./run-test-suite.py 20-rosa-hcp-provision --format junit -vvv --ai-agent \
                                   -e OCP_HUB_API_URL="${OCP_HUB_API_URL}" \
                                   -e OCP_HUB_CLUSTER_USER="${OCP_HUB_CLUSTER_USER}" \
                                   -e OCP_HUB_CLUSTER_PASSWORD="${OCP_HUB_CLUSTER_PASSWORD}" \
@@ -193,8 +195,8 @@ pipeline {
                                   -e name_prefix="${NAME_PREFIX}"
                             '''
                         }
-                        // Archive provisioning test results
-                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/test-results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.html, rosa-hcp-e2e-test/test-results/**/*.json', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
+                        // Archive provisioning test results, including AI agent logs
+                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/test-results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.html, rosa-hcp-e2e-test/test-results/**/*.json, rosa-hcp-e2e-test/agents/knowledge_base/intervention_log.json', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
                     }
                     catch (ex) {
                         echo 'ROSA HCP Provisioning Tests failed'
@@ -231,7 +233,8 @@ pipeline {
                                     cd rosa-hcp-e2e-test
                                     # Execute the ROSA HCP deletion test suite
                                     # Pass all required credentials and parameters (same as provisioning)
-                                    ./run-test-suite.py 30-rosa-hcp-delete --format junit -vvv \
+                                    # AI agents enabled for autonomous issue detection and remediation
+                                    ./run-test-suite.py 30-rosa-hcp-delete --format junit -vvv --ai-agent \
                                       -e OCP_HUB_API_URL="${OCP_HUB_API_URL}" \
                                       -e OCP_HUB_CLUSTER_USER="${OCP_HUB_CLUSTER_USER}" \
                                       -e OCP_HUB_CLUSTER_PASSWORD="${OCP_HUB_CLUSTER_PASSWORD}" \
@@ -245,8 +248,8 @@ pipeline {
                                 '''
                             }
                         }
-                        // Archive deletion test results
-                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/test-results/**/*', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
+                        // Archive deletion test results, including AI agent logs
+                        archiveArtifacts artifacts: 'rosa-hcp-e2e-test/test-results/**/*, rosa-hcp-e2e-test/agents/knowledge_base/intervention_log.json', allowEmptyArchive: true, followSymlinks: false, fingerprint: true
                     }
                     catch (ex) {
                         echo 'ROSA HCP Deletion Tests failed or timed out'
@@ -259,8 +262,8 @@ pipeline {
         stage('Archive the CAPI/CAPA Artifacts') {
             steps {
                 script {
-                   // Archive artifacts from both old (results/) and new (test-results/) systems
-                   archiveArtifacts artifacts: 'rosa-hcp-e2e-test/results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.xml', allowEmptyArchive: true, followSymlinks: false
+                   // Archive artifacts from both old (results/) and new (test-results/) systems, including AI agent logs
+                   archiveArtifacts artifacts: 'rosa-hcp-e2e-test/results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.xml, rosa-hcp-e2e-test/agents/knowledge_base/intervention_log.json', allowEmptyArchive: true, followSymlinks: false
 
                    // Publish JUnit test results from both systems
                    junit allowEmptyResults: true, testResults: 'rosa-hcp-e2e-test/results/**/*.xml, rosa-hcp-e2e-test/test-results/**/*.xml'
