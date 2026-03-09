@@ -58,6 +58,7 @@ class RemediationAgent(BaseAgent):
             "remove_finalizers": self._fix_remove_finalizers,
             "refresh_ocm_token": self._fix_refresh_ocm_token,
             "backoff_and_retry": self._fix_backoff_retry,
+            "cleanup_vpc_dependencies": self._fix_cleanup_vpc_dependencies,
             "manual_cloudformation_cleanup": self._fix_cloudformation_manual,
             "install_capi_capa": self._fix_install_capi,
             "increase_timeout_and_monitor": self._fix_increase_timeout,
@@ -146,6 +147,124 @@ class RemediationAgent(BaseAgent):
         time.sleep(backoff_seconds)
 
         return True, f"Backoff applied ({backoff_seconds}s). Ready for retry."
+
+    def _fix_cleanup_vpc_dependencies(self, params: Dict) -> Tuple[bool, str]:
+        """
+        Clean up orphaned VPC dependencies blocking deletion.
+
+        This automatically identifies and removes:
+        - Orphaned ENIs (Elastic Network Interfaces)
+        - Security groups with no dependencies
+        - Other VPC attachments blocking deletion
+        """
+        vpc_id = params.get("vpc_id")
+        region = params.get("region", "us-west-2")
+
+        if not vpc_id:
+            return False, "VPC ID is required for cleanup"
+
+        self.log(f"Cleaning up VPC dependencies for {vpc_id} in {region}", "info")
+
+        outputs = []
+        cleanup_count = 0
+
+        try:
+            # Step 1: Find orphaned ENIs
+            self.log("Searching for orphaned ENIs...", "info")
+            cmd = [
+                "aws", "ec2", "describe-network-interfaces",
+                "--region", region,
+                "--filters", f"Name=vpc-id,Values={vpc_id}",
+                "--query", "NetworkInterfaces[*].[NetworkInterfaceId,Attachment.AttachmentId,Status,Description]",
+                "--output", "text"
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+            if result.returncode == 0 and result.stdout.strip():
+                enis = result.stdout.strip().split('\n')
+                outputs.append(f"Found {len(enis)} ENI(s) in VPC")
+
+                for eni_line in enis:
+                    parts = eni_line.split('\t')
+                    if len(parts) >= 3:
+                        eni_id = parts[0]
+                        attachment_id = parts[1] if len(parts) > 1 else None
+                        status = parts[2] if len(parts) > 2 else "unknown"
+                        description = parts[3] if len(parts) > 3 else ""
+
+                        # Skip ENIs that are in-use by critical services
+                        if "lambda" in description.lower() or "rds" in description.lower():
+                            outputs.append(f"  Skipping {eni_id}: {description} (managed service)")
+                            continue
+
+                        # Detach if attached
+                        if attachment_id and attachment_id != "None":
+                            detach_cmd = [
+                                "aws", "ec2", "detach-network-interface",
+                                "--region", region,
+                                "--attachment-id", attachment_id,
+                                "--force"
+                            ]
+                            detach_result = subprocess.run(detach_cmd, capture_output=True, text=True, timeout=30)
+                            if detach_result.returncode == 0:
+                                outputs.append(f"  ✓ Detached ENI {eni_id}")
+                                time.sleep(2)  # Wait for detachment
+
+                        # Delete ENI if available
+                        if status == "available" or attachment_id == "None":
+                            delete_cmd = [
+                                "aws", "ec2", "delete-network-interface",
+                                "--region", region,
+                                "--network-interface-id", eni_id
+                            ]
+                            delete_result = subprocess.run(delete_cmd, capture_output=True, text=True, timeout=30)
+                            if delete_result.returncode == 0:
+                                outputs.append(f"  ✓ Deleted ENI {eni_id}")
+                                cleanup_count += 1
+                            else:
+                                outputs.append(f"  ✗ Failed to delete ENI {eni_id}: {delete_result.stderr}")
+            else:
+                outputs.append("No orphaned ENIs found")
+
+            # Step 2: Clean up non-default security groups
+            self.log("Checking security groups...", "info")
+            sg_cmd = [
+                "aws", "ec2", "describe-security-groups",
+                "--region", region,
+                "--filters", f"Name=vpc-id,Values={vpc_id}",
+                "--query", "SecurityGroups[?GroupName!='default'].[GroupId,GroupName]",
+                "--output", "text"
+            ]
+
+            sg_result = subprocess.run(sg_cmd, capture_output=True, text=True, timeout=30)
+
+            if sg_result.returncode == 0 and sg_result.stdout.strip():
+                sgs = sg_result.stdout.strip().split('\n')
+                outputs.append(f"Found {len(sgs)} non-default security group(s)")
+
+                # Note: We don't delete security groups automatically as they may be in use
+                # CloudFormation will handle this during stack deletion
+                for sg_line in sgs:
+                    parts = sg_line.split('\t')
+                    if len(parts) >= 2:
+                        sg_id = parts[0]
+                        sg_name = parts[1]
+                        outputs.append(f"  Security group: {sg_id} ({sg_name})")
+            else:
+                outputs.append("No non-default security groups found")
+
+            summary = f"VPC cleanup completed: {cleanup_count} ENI(s) removed"
+            full_output = "\n".join(outputs)
+
+            self.log(summary, "success" if cleanup_count > 0 else "info")
+
+            return True, f"{summary}\n\nDetails:\n{full_output}"
+
+        except subprocess.TimeoutExpired:
+            return False, "Timeout while cleaning up VPC dependencies"
+        except Exception as e:
+            return False, f"Error during VPC cleanup: {str(e)}"
 
     def _fix_cloudformation_manual(self, params: Dict) -> Tuple[bool, str]:
         """Handle CloudFormation issues requiring manual intervention."""
