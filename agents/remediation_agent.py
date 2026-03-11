@@ -12,6 +12,7 @@ Author: Tina Fitzgerald
 Created: March 3, 2026
 """
 
+import json
 import subprocess
 import time
 from pathlib import Path
@@ -154,27 +155,35 @@ class RemediationAgent(BaseAgent):
 
         This automatically identifies and removes:
         - Orphaned ENIs (Elastic Network Interfaces)
-        - Security groups with no dependencies
+        - Security groups tagged with the ROSA HCP cluster ID
         - Other VPC attachments blocking deletion
         """
         vpc_id = params.get("vpc_id")
+        cluster_id = params.get("cluster_id")  # ROSA HCP cluster ID for filtering
         region = params.get("region", "us-west-2")
 
         if not vpc_id:
             return False, "VPC ID is required for cleanup"
 
+        if not cluster_id:
+            return False, "Cluster ID is required for cleanup (to prevent deleting resources from other clusters in shared VPCs)"
+
         self.log(f"Cleaning up VPC dependencies for {vpc_id} in {region}", "info")
+        self.log(f"Filtering resources by cluster ID: {cluster_id}", "info")
 
         outputs = []
         cleanup_count = 0
+        sg_cleanup_count = 0
 
         try:
-            # Step 1: Find orphaned ENIs
+            # Step 1: Find orphaned ENIs tagged with cluster ID
             self.log("Searching for orphaned ENIs...", "info")
             cmd = [
                 "aws", "ec2", "describe-network-interfaces",
                 "--region", region,
-                "--filters", f"Name=vpc-id,Values={vpc_id}",
+                "--filters",
+                f"Name=vpc-id,Values={vpc_id}",
+                f"Name=tag:cluster.x-k8s.io/cluster-name,Values={cluster_id}",
                 "--query", "NetworkInterfaces[*].[NetworkInterfaceId,Attachment.AttachmentId,Status,Description]",
                 "--output", "text"
             ]
@@ -227,34 +236,60 @@ class RemediationAgent(BaseAgent):
             else:
                 outputs.append("No orphaned ENIs found")
 
-            # Step 2: Clean up non-default security groups
+            # Step 2: Clean up security groups tagged with cluster ID
             self.log("Checking security groups...", "info")
+
+            # Build filters for security groups (always filter by cluster ID)
+            sg_filters = [
+                f"Name=vpc-id,Values={vpc_id}",
+                f"Name=tag:red-hat-clustertype,Values={cluster_id}"
+            ]
+
             sg_cmd = [
                 "aws", "ec2", "describe-security-groups",
                 "--region", region,
-                "--filters", f"Name=vpc-id,Values={vpc_id}",
-                "--query", "SecurityGroups[?GroupName!='default'].[GroupId,GroupName]",
-                "--output", "text"
+                "--filters"
+            ] + sg_filters + [
+                "--query", "SecurityGroups[?GroupName!='default'].[GroupId,GroupName,Tags]",
+                "--output", "json"
             ]
 
             sg_result = subprocess.run(sg_cmd, capture_output=True, text=True, timeout=30)
 
             if sg_result.returncode == 0 and sg_result.stdout.strip():
-                sgs = sg_result.stdout.strip().split('\n')
-                outputs.append(f"Found {len(sgs)} non-default security group(s)")
+                sgs = json.loads(sg_result.stdout)
 
-                # Note: We don't delete security groups automatically as they may be in use
-                # CloudFormation will handle this during stack deletion
-                for sg_line in sgs:
-                    parts = sg_line.split('\t')
-                    if len(parts) >= 2:
-                        sg_id = parts[0]
-                        sg_name = parts[1]
-                        outputs.append(f"  Security group: {sg_id} ({sg_name})")
+                if sgs:
+                    outputs.append(f"Found {len(sgs)} security group(s) for cluster {cluster_id}")
+
+                    for sg_data in sgs:
+                        sg_id = sg_data[0]
+                        sg_name = sg_data[1]
+
+                        # Attempt to delete the security group
+                        delete_sg_cmd = [
+                            "aws", "ec2", "delete-security-group",
+                            "--region", region,
+                            "--group-id", sg_id
+                        ]
+
+                        delete_sg_result = subprocess.run(delete_sg_cmd, capture_output=True, text=True, timeout=30)
+                        if delete_sg_result.returncode == 0:
+                            outputs.append(f"  ✓ Deleted security group {sg_id} ({sg_name})")
+                            sg_cleanup_count += 1
+                        else:
+                            # Security group might have dependencies, log but continue
+                            error_msg = delete_sg_result.stderr.strip()
+                            if "DependencyViolation" in error_msg:
+                                outputs.append(f"  ⚠ Security group {sg_id} ({sg_name}) has dependencies, will be cleaned by CloudFormation")
+                            else:
+                                outputs.append(f"  ✗ Failed to delete security group {sg_id}: {error_msg}")
+                else:
+                    outputs.append("No security groups found matching criteria")
             else:
-                outputs.append("No non-default security groups found")
+                outputs.append("No security groups found")
 
-            summary = f"VPC cleanup completed: {cleanup_count} ENI(s) removed"
+            summary = f"VPC cleanup completed: {cleanup_count} ENI(s) removed, {sg_cleanup_count} security group(s) deleted"
             full_output = "\n".join(outputs)
 
             self.log(summary, "success" if cleanup_count > 0 else "info")
