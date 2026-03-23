@@ -6,14 +6,14 @@
 # in the correct order with proper error handling and waiting.
 # ================================================================
 
-- name: Set sidecar log file for real-time agent monitoring
+- name: Set agent monitor log file for real-time monitoring
   set_fact:
-    agent_sidecar_log: "/tmp/deletion-agent-{{ cluster_name }}.log"
+    agent_monitor_log: "/tmp/deletion-agent-{{ cluster_name }}.log"
 
-- name: Initialize sidecar log file
+- name: Initialize agent monitor log file
   copy:
     content: ""
-    dest: "{{ agent_sidecar_log }}"
+    dest: "{{ agent_monitor_log }}"
     force: true
 
 - name: Check if Cluster exists
@@ -97,7 +97,7 @@
 
 - name: Emit agent context for ROSAControlPlane deletion wait
   shell: |
-    echo "#AGENT_CONTEXT: resource_name={{ cluster_name }} namespace={{ capi_namespace }} resource_type=rosacontrolplane" | tee -a "{{ agent_sidecar_log }}"
+    echo "#AGENT_CONTEXT: resource_name={{ cluster_name }} namespace={{ capi_namespace }} resource_type=rosacontrolplane" | tee -a "{{ agent_monitor_log }}"
   changed_when: false
   when:
     - wait_for_deletion | bool
@@ -105,7 +105,7 @@
 
 - name: Wait for ROSAControlPlane deletion to complete
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     RETRIES={{ (rosacontrolplane_timeout | default(deletion_timeout) | int / 10) | int }}
     for i in $(seq 1 $RETRIES); do
       OUTPUT=$(oc get rosacontrolplane {{ cluster_name }} -n {{ capi_namespace }} 2>&1)
@@ -130,7 +130,7 @@
 
 - name: Final check - verify ROSAControlPlane is actually gone
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     for i in $(seq 1 18); do
       OUTPUT=$(oc get rosacontrolplane {{ cluster_name }} -n {{ capi_namespace }} 2>&1)
       RC=$?
@@ -212,7 +212,7 @@
 
 - name: Emit agent context for ROSANetwork deletion wait
   shell: |
-    echo "#AGENT_CONTEXT: resource_name={{ rosa_network_name }} namespace={{ capi_namespace }} resource_type=rosanetwork" | tee -a "{{ agent_sidecar_log }}"
+    echo "#AGENT_CONTEXT: resource_name={{ rosa_network_name }} namespace={{ capi_namespace }} resource_type=rosanetwork" | tee -a "{{ agent_monitor_log }}"
   changed_when: false
   when:
     - wait_for_deletion | bool
@@ -221,7 +221,7 @@
 
 - name: Wait for ROSANetwork deletion to complete
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     RETRIES={{ (rosanetwork_timeout | default(deletion_timeout) | int / 10) | int }}
     for i in $(seq 1 $RETRIES); do
       OUTPUT=$(oc get rosanetwork {{ rosa_network_name }} -n {{ capi_namespace }} 2>&1)
@@ -247,7 +247,7 @@
 
 - name: Final check - verify ROSANetwork is actually gone
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     for i in $(seq 1 36); do
       OUTPUT=$(oc get rosanetwork {{ rosa_network_name }} -n {{ capi_namespace }} 2>&1)
       RC=$?
@@ -307,7 +307,7 @@
 
 - name: Emit agent context for ROSARoleConfig deletion wait
   shell: |
-    echo "#AGENT_CONTEXT: resource_name={{ rosa_role_config_name }} namespace={{ capi_namespace }} resource_type=rosaroleconfig" | tee -a "{{ agent_sidecar_log }}"
+    echo "#AGENT_CONTEXT: resource_name={{ rosa_role_config_name }} namespace={{ capi_namespace }} resource_type=rosaroleconfig" | tee -a "{{ agent_monitor_log }}"
   changed_when: false
   when:
     - wait_for_deletion | bool
@@ -316,7 +316,7 @@
 
 - name: Wait for ROSARoleConfig deletion to complete
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     RETRIES={{ (rosaroleconfig_timeout | default(deletion_timeout) | int / 10) | int }}
     for i in $(seq 1 $RETRIES); do
       OUTPUT=$(oc get rosaroleconfig {{ rosa_role_config_name }} -n {{ capi_namespace }} 2>&1)
@@ -342,7 +342,7 @@
 
 - name: Final check - verify ROSARoleConfig is actually gone
   shell: |
-    LOGFILE="{{ agent_sidecar_log }}"
+    LOGFILE="{{ agent_monitor_log }}"
     for i in $(seq 1 18); do
       OUTPUT=$(oc get rosaroleconfig {{ rosa_role_config_name }} -n {{ capi_namespace }} 2>&1)
       RC=$?
